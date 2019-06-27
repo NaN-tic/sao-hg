@@ -124,7 +124,7 @@
             }.bind(this));
         },
         clean: function() {
-            this.widget.children().remove();
+            this.widget.empty();
             this.states = {};
         },
         response: function(state) {
