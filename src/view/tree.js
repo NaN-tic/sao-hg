@@ -1653,7 +1653,7 @@
             return this._get_column_td(this.edited_column);
         },
         key_press: function(event_) {
-            var current_td, selector, next_column, next_idx, i, next_row;
+            var current_td, selector, next_column, next_idx, i;
             var states;
 
             if (((event_.which != Sao.common.TAB_KEYCODE) &&
@@ -1687,22 +1687,10 @@
                 } else if (event_.which == Sao.common.UP_KEYCODE ||
                     event_.which == Sao.common.DOWN_KEYCODE ||
                     event_.which == Sao.common.RETURN_KEYCODE) {
-                    if (event_.which == Sao.common.UP_KEYCODE) {
-                        next_row = this.el.prev('tr');
-                    } else if (event_.which == Sao.common.DOWN_KEYCODE) {
-                        next_row = this.el.next('tr');
-                    } else {
-                        if (this.tree.attributes.editable == 'bottom') {
-                            next_row = this.el.next('tr');
-                        } else {
-                            next_row = this.el.prev('tr');
-                        }
-                    }
                     next_column = this.edited_column;
                     this.record.validate(this.tree.get_fields())
                         .then(function(validate) {
                             if (!validate) {
-                                next_row = null;
                                 var invalid_fields =
                                     this.record.invalid_fields();
                                 for (i = 0; i < this.tree.columns.length; i++) {
@@ -1712,6 +1700,8 @@
                                         break;
                                     }
                                 }
+                                this._get_column_td(next_column)
+                                    .find(':input,[tabindex=0]').focus();
                             } else {
                                 var prm = jQuery.when();
                                 if (!this.tree.screen.group.parent) {
@@ -1722,6 +1712,18 @@
                                 prm.fail(function() {
                                     widget.focus();
                                 });
+                                var next_row;
+                                if (event_.which == Sao.common.UP_KEYCODE) {
+                                    next_row = this.el.prev('tr');
+                                } else if (event_.which == Sao.common.DOWN_KEYCODE) {
+                                    next_row = this.el.next('tr');
+                                } else {
+                                    if (this.tree.attributes.editable == 'bottom') {
+                                        next_row = this.el.next('tr');
+                                    } else {
+                                        next_row = this.el.prev('tr');
+                                    }
+                                }
                                 if (!next_row.length &&
                                     ((event_.which == Sao.common.RETURN_KEYCODE) ||
                                         ((event_.which == Sao.common.UP_KEYCODE) &&
@@ -1734,31 +1736,22 @@
                                     var limit = ((this.tree.screen.size_limit !== null) &&
                                         (model.length >= this.tree.screen.size_limit));
                                     if (access.create && !limit) {
-                                        prm = prm.then(function() {
+                                        prm.then(function() {
                                             return this.tree.screen.new_();
                                         }.bind(this))
                                             .then(function(record) {
-                                                var rows = this.tree.tbody.children('tr');
-                                                if (this.tree.attributes.editable == 'bottom') {
-                                                    next_row = rows.last();
-                                                } else {
-                                                    next_row = rows.first();
-                                                }
                                                 var sequence = this.tree.attributes.sequence;
                                                 if (sequence) {
                                                     record.group.set_sequence(sequence);
                                                 }
                                             }.bind(this));
                                     }
+                                } else {
+                                    this._get_column_td(next_column, next_row)
+                                        .trigger('click')
+                                        .find(':input,[tabindex=0]').focus();
                                 }
-                                return prm;
                             }
-                        }.bind(this)).then(function() {
-                            window.setTimeout(function() {
-                                this._get_column_td(next_column, next_row)
-                                    .click()
-                                    .find(':input,[tabindex=0]').focus();
-                            }.bind(this), 0);
                         }.bind(this));
                 } else if (event_.which == Sao.common.ESC_KEYCODE) {
                     this.tree.edit_row(null);
