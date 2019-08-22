@@ -329,6 +329,17 @@ function eval_pyson(value){
             }
             return [];
         },
+        get modified() {
+            for (var name in this.widgets) {
+                var widgets = this.widgets[name];
+                for (var i=0; i < widgets.length; i++) {
+                    if (widgets[i].modified) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        },
         set_cursor: function(new_, reset_view) {
             var i, name, j;
             var focus_el, notebook, child, group;
@@ -503,6 +514,15 @@ function eval_pyson(value){
             var col = this.col;
             var has_expand = false;
             var i, j;
+
+            var parent_max_width = 1;
+            this.el.parents('td').each(function() {
+                var width = this.style.width;
+                if (width.endsWith('%')) {
+                    parent_max_width *= parseFloat(width.slice(0, -1), 10) / 100;
+                }
+            });
+
             var get_xexpands = function(row) {
                 row = jQuery(row);
                 var xexpands = [];
@@ -581,6 +601,12 @@ function eval_pyson(value){
                             width += widths[i + j] || 0;
                         }
                         cell.css('width', width + '%');
+                        if (0 < width) {
+                            // 25 is the percentage of offcanvas on md
+                            cell.css(
+                                'max-width',
+                                ((width * parent_max_width) - 25) + 'vw');
+                        }
                     } else {
                         cell.css('width', '');
                     }
@@ -986,6 +1012,9 @@ function eval_pyson(value){
         },
         set_required: function(required) {
         },
+        get modified() {
+            return false;
+        },
         set_invisible: function(invisible) {
             this.visible = !invisible;
             if (invisible) {
@@ -1254,23 +1283,21 @@ function eval_pyson(value){
 
             var record = this.record;
             if (this.datalist) {
-                this.datalist.children().remove();
-                var set_autocompletion = function() {
-                    var selection = [];
-                    if (record) {
-                        selection = record.autocompletion[this.field_name] || [];
+                this.datalist.empty();
+                var selection;
+                if (record) {
+                    if (!(this.field_name in record.autocompletion)) {
+                        record.do_autocomplete(this.field_name);
                     }
-                    selection.forEach(function(e) {
-                        jQuery('<option/>', {
-                            'value': e
-                        }).appendTo(this.datalist);
-                    }.bind(this));
-                }.bind(this);
-                if (record && !(this.field_name in record.autocompletion)) {
-                    record.do_autocomplete(this.field_name).done(set_autocompletion);
+                    selection = record.autocompletion[this.field_name] || [];
                 } else {
-                    set_autocompletion();
+                    selection = [];
                 }
+                selection.forEach(function(e) {
+                    jQuery('<option/>', {
+                        'value': e
+                    }).appendTo(this.datalist);
+                }.bind(this));
             }
 
             // Set size
@@ -1287,8 +1314,18 @@ function eval_pyson(value){
             this.input.attr('size', length);
             this.group.css('width', width);
         },
+        get modified() {
+            if (this.record && this.field) {
+                var value = this.get_client_value();
+                return value != this.get_value();
+            }
+            return false;
+        },
         set_value: function() {
             this.field.set_client(this.record, this.input.val());
+        },
+        get_value: function() {
+            return this.input.val();
         },
         set_readonly: function(readonly) {
             this.input.prop('readonly', readonly);
@@ -1439,6 +1476,14 @@ function eval_pyson(value){
         focus: function() {
             this.input.focus();
         },
+        get modified() {
+            if (this.record && this.field) {
+                var field_value = this.field.get_client(this.record);
+                return (JSON.stringify(field_value) !=
+                    JSON.stringify(this.get_value()));
+            }
+            return false;
+        },
         set_value: function() {
             this.field.set_client(this.record, this.get_value());
         },
@@ -1506,6 +1551,13 @@ function eval_pyson(value){
         focus: function() {
             this.input.focus();
         },
+        get modified() {
+            if (this.record && this.field) {
+                var value = this.input.val();
+                return this.field.get_client(this.record) != value;
+            }
+            return false;
+        },
         set_value: function() {
             this.field.set_client(this.record, this.input.val());
         },
@@ -1547,6 +1599,13 @@ function eval_pyson(value){
             this.group.css('width', '');
             this.factor = Number(attributes.factor || 1);
         },
+        get modified() {
+            if (this.record && this.field) {
+                var value = this.get_client_value();
+                return value != this.get_value();
+            }
+            return false;
+        },
         set_value: function() {
             this.field.set_client(
                 this.record, this.get_value(), undefined, this.factor);
@@ -1565,6 +1624,8 @@ function eval_pyson(value){
                 value = field.get(this.record);
                 if (value !== null) {
                     value *= this.factor;
+                } else {
+                    value = '';
                 }
             }
             return value;
@@ -1690,11 +1751,17 @@ function eval_pyson(value){
         focus: function() {
             this.select.focus();
         },
-        value_get: function() {
+        get_value: function() {
             return JSON.parse(this.select.val());
         },
+        get modified() {
+            if (this.record && this.field) {
+                return this.field.get(this.record) != this.get_value();
+            }
+            return false;
+        },
         set_value: function() {
-            var value = this.value_get();
+            var value = this.get_value();
             this.field.set_client(this.record, value);
         },
         set_readonly: function(readonly) {
@@ -1785,9 +1852,17 @@ function eval_pyson(value){
         focus: function() {
             this.input.focus();
         },
+        get modified() {
+            if (this.record && this.field) {
+                return this.field.get_client(this.record) != this.get_value();
+            }
+            return false;
+        },
+        get_value: function() {
+            return this.input.val() || '';
+        },
         set_value: function() {
-            var value = this.input.val() || '';
-            this.field.set_client(this.record, value);
+            this.field.set_client(this.record, this.get_value());
         },
         set_readonly: function(readonly) {
             this.input.prop('readonly', readonly);
@@ -1974,10 +2049,13 @@ function eval_pyson(value){
         focus: function() {
             this.input.focus();
         },
+        get_value: function() {
+            return this.input.html() || '';
+        },
         set_value: function() {
             // avoid modification of not normalized value
             this._normalize(this.input);
-            var value = this.input.html() || '';
+            var value = this.get_value();
             var previous = this.field.get_client(this.record);
             var previous_el = jQuery('<div/>').html(previous || '');
             this._normalize(previous_el);
@@ -2006,6 +2084,14 @@ function eval_pyson(value){
                     }
                 }
             });
+        },
+        get modified() {
+            if (this.record && this.field) {
+                var value = this.field.get_client(this.record) || '';
+                this._normalize(this.input);
+                return value != this.get_value();
+            }
+            return false;
         },
         set_readonly: function(readonly) {
             this.input.prop('contenteditable', !readonly);
@@ -2211,6 +2297,13 @@ function eval_pyson(value){
         },
         get create_access() {
             return this.attributes.create && this.get_access('create');
+        },
+        get modified() {
+            if (this.record && this.field) {
+                var value = this.entry.val();
+                return this.field.get_client(this.record) != value;
+            }
+            return false;
         },
         id_from_value: function(value) {
             return value;
@@ -2506,6 +2599,20 @@ function eval_pyson(value){
                 }));
             });
         },
+        get modified() {
+            if (this.record && this.field) {
+                var value = this.field.get_client(this.record);
+                var model = '',
+                    name = '';
+                if (value) {
+                    model = value[0];
+                    name = value[1];
+                }
+                return ((model != this.get_model()) ||
+                    (name != this.entry.val()));
+            }
+            return false;
+        },
         id_from_value: function(value) {
             return parseInt(value.split(',')[1], 10);
         },
@@ -2788,6 +2895,9 @@ function eval_pyson(value){
             // TODO key_press
 
             this.but_switch.prop('disabled', this.screen.number_of_views <= 0);
+        },
+        get modified() {
+            return this.screen.current_view.modified;
         },
         set_readonly: function(readonly) {
             this._readonly = readonly;
@@ -3617,6 +3727,17 @@ function eval_pyson(value){
                 this, view, attributes);
             this.select.prop('multiple', true);
         },
+        get modified() {
+            if (this.record && this.field) {
+                var group = new Set(this.field.get_client(this.record)
+                    .map(function(r) {
+                        return r.id;
+                    }));
+                var value = new Set(this.get_value());
+                return !Sao.common.compare(value, group);
+            }
+            return false;
+        },
         display_update_selection: function() {
             var i, len, element;
             var record = this.record;
@@ -3644,15 +3765,13 @@ function eval_pyson(value){
                 this.select.val(value);
             }.bind(this));
         },
-        set_value: function() {
+        get_value: function() {
             var value = this.select.val();
             if (value) {
-                value = value.map(function(e) { return parseInt(e, 10); });
-            } else {
-                value = [];
+                return value.map(function(e) { return parseInt(e, 10); });
             }
-            this.field.set_client(this.record, value);
-        }
+            return [];
+        },
     });
 
     Sao.View.Form.Image = Sao.class_(Sao.View.Form.BinaryMixin, {
@@ -4020,6 +4139,18 @@ function eval_pyson(value){
             }
             return value;
         },
+        get modified() {
+            if (this.record && this.field) {
+                var value = this.field.get_client(this.record);
+                for (var key in this.fields) {
+                    var widget = this.fields[key];
+                    if (widget.modified(value)) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        },
         set_readonly: function(readonly) {
             this._readonly = readonly;
             this._set_button_sensitive();
@@ -4192,6 +4323,10 @@ function eval_pyson(value){
 
             this.el.change(
                     this.parent_widget.focus_out.bind(this.parent_widget));
+        },
+        modified: function(value) {
+            return (JSON.stringify(this.get_value()) !=
+                JSON.stringify(value[this.name]));
         },
         get_value: function() {
             return this.input.val();
