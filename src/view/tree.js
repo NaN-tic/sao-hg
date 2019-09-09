@@ -82,9 +82,23 @@
             this.columns = [];
             this.selection_mode = (screen.attributes.selection_mode ||
                 Sao.common.SELECTION_MULTIPLE);
-            this.el = jQuery('<div/>', {
+            this.el = jQuery('<div/>');
+            this.scrollbar = jQuery('<div/>')
+                .appendTo(jQuery('<div/>', {
+                    'class': 'scrollbar responsive',
+                }).appendTo(this.el));
+            this.treeview = jQuery('<div/>', {
                 'class': 'treeview responsive'
-            });
+            }).appendTo(this.el);
+
+            // Synchronize both scrollbars
+            this.treeview.scroll(function() {
+                this.scrollbar.parent().scrollLeft(this.treeview.scrollLeft());
+            }.bind(this));
+            this.scrollbar.parent().scroll(function() {
+                this.treeview.scrollLeft(this.scrollbar.parent().scrollLeft());
+            }.bind(this));
+
             this.expanded = {};
 
             Sao.View.Tree._super.init.call(this, view_id, screen, xml);
@@ -98,7 +112,7 @@
             if (this.editable) {
                 this.table.addClass('table-bordered');
             }
-            this.el.append(this.table);
+            this.treeview.append(this.table);
             var colgroup = jQuery('<colgroup/>').appendTo(this.table);
             var col = jQuery('<col/>', {
                 'class': 'selection-state',
@@ -358,6 +372,7 @@
             var inversion = new Sao.common.DomainInversion();
             domain = inversion.simplify(domain);
             var decoder = new Sao.PYSON.Decoder(this.screen.context);
+            var min_width = 0;
             this.columns.forEach(function(column) {
                 visible_columns += 1;
                 var name = column.attributes.name;
@@ -403,22 +418,23 @@
                         'biginteger': 6,
                         'float': 8,
                         'numeric': 8,
-                        'timedelta': 10,
-                        'date': 10,
-                        'datetime': 10,
-                        'time': 10,
                         'selection': 9,
-                        'char': 10,
                         'one2many': 5,
                         'many2many': 5,
                         'boolean': 2,
                         'binary': 20,
                     }[column.attributes.widget] || 10;
-                    width = width * 100 + '%';
-                    column.col.css('width', width);
+                    var factor = 1;
+                    if (column.attributes.expand) {
+                        factor += parseInt(column.attributes.expand, 10);
+                    }
+                    column.col.css('width', width * 100 * factor  + '%');
                     column.col.show();
+                    min_width += width * 10;
                 }
             }.bind(this));
+            this.table.css('min-width', min_width + 'px');
+            this.scrollbar.css('min-width', min_width + 'px');
             this.tbody.find('tr.more-row > td').attr(
                 'colspan', visible_columns);
 
@@ -806,21 +822,26 @@
     });
 
     function redraw_async(rows, selected, expanded) {
-        var chunk = Sao.config.display_size;
-        var dfd = jQuery.Deferred();
-        var redraw_rows = function(i) {
-            rows.slice(i, i + chunk).forEach(function(row) {
-                row.redraw(selected, expanded);
-            });
-            i += chunk;
-            if (i < rows.length) {
-                setTimeout(redraw_rows, 0, i);
-            } else {
-                dfd.resolve();
+        var dfd= jQuery.Deferred(),
+            i = 0;
+        var redraw = function() {
+            for (; i < rows.length; i++) {
+                var row = rows[i];
+                var record = row.record,
+                    column = row.tree.columns[0];
+                if (!record.is_loaded(column.attributes.name)) {
+                    // Prefetch the first field to prevent promises in
+                    // Cell.render
+                    record.load(column.attributes.name).done(redraw);
+                    return;
+                } else {
+                    row.redraw(selected, expanded);
+                }
             }
+            dfd.resolve();
         };
-        setTimeout(redraw_rows, 0, 0);
-        return dfd;
+        redraw();
+        return dfd.promise();
     }
 
     Sao.View.Tree.Row = Sao.class_(Object, {
@@ -1283,6 +1304,13 @@
                 return;
             }
 
+            var current_record = this.tree.screen.current_record;
+            if ((this.record != current_record) &&
+                !current_record.validate(
+                    this.tree.get_fields(), false, false, true)) {
+                return;
+            }
+
             body = listener = jQuery(document.body);
             if (body.hasClass('modal-open')) {
                 listener = this.tree.el.parents('.modal').last();
@@ -1418,11 +1446,18 @@
                         widget.focus();
                     }
                 } else if (event_.which == Sao.common.UP_KEYCODE ||
-                    event_.which == Sao.common.DOWN_KEYCODE) {
+                    event_.which == Sao.common.DOWN_KEYCODE ||
+                    event_.which == Sao.common.RETURN_KEYCODE) {
                     if (event_.which == Sao.common.UP_KEYCODE) {
                         next_row = this.el.prev('tr');
-                    } else {
+                    } else if (event_.which == Sao.common.DOWN_KEYCODE) {
                         next_row = this.el.next('tr');
+                    } else {
+                        if (this.tree.attributes.editable == 'bottom') {
+                            next_row = this.el.next('tr');
+                        } else {
+                            next_row = this.el.prev('tr');
+                        }
                     }
                     next_column = this.edited_column;
                     this.record.validate(this.tree.get_fields())
@@ -1439,62 +1474,52 @@
                                     }
                                 }
                             } else {
-                                var prm;
+                                var prm = jQuery.when();
                                 if (!this.tree.screen.group.parent) {
                                     prm = this.record.save();
                                 } else if (this.tree.screen.attributes.pre_validate) {
                                     prm = this.record.pre_validate();
                                 }
-                                if (prm) {
-                                    return prm.fail(function() {
-                                        widget.focus();
-                                    });
+                                prm.fail(function() {
+                                    widget.focus();
+                                });
+                                if (!next_row.length &&
+                                    ((event_.which == Sao.common.RETURN_KEYCODE) ||
+                                        ((event_.which == Sao.common.UP_KEYCODE) &&
+                                            (this.tree.attributes.editable == 'top')) ||
+                                        ((event_.which == Sao.common.DOWN_KEYCODE) &&
+                                            (this.tree.attributes.editable == 'bottom')))) {
+                                    var model = this.tree.screen.group;
+                                    var access = Sao.common.MODELACCESS.get(
+                                        this.tree.screen.model_name);
+                                    var limit = ((this.tree.screen.size_limit !== null) &&
+                                        (model.length >= this.tree.screen.size_limit));
+                                    if (access.create && !limit) {
+                                        prm = prm.then(function() {
+                                            return this.tree.screen.new_();
+                                        }.bind(this))
+                                            .then(function() {
+                                                var rows = this.tree.tbody.children('tr');
+                                                if (this.tree.attributes.editable == 'bottom') {
+                                                    next_row = rows.last();
+                                                } else {
+                                                    next_row = rows.first();
+                                                }
+                                            }.bind(this));
+                                    }
                                 }
+                                return prm;
                             }
                         }.bind(this)).then(function() {
                             window.setTimeout(function() {
                                 this._get_column_td(next_column, next_row)
-                                    .trigger('click');
+                                    .click()
+                                    .find(':input,[tabindex=0]').focus();
                             }.bind(this), 0);
                         }.bind(this));
                 } else if (event_.which == Sao.common.ESC_KEYCODE) {
                     this.tree.edit_row(null);
                     this.get_static_el().show().find('[tabindex=0]').focus();
-                } else if (event_.which == Sao.common.RETURN_KEYCODE) {
-                    var focus_cell = function(row) {
-                        this._get_column_td(this.edited_column, row)
-                            .trigger('click');
-                    }.bind(this);
-                    if (this.tree.attributes.editable == 'bottom') {
-                        next_row = this.el.next('tr');
-                    } else {
-                        next_row = this.el.prev('tr');
-                    }
-                    if (next_row.length) {
-                        focus_cell(next_row);
-                    } else {
-                        var model = this.tree.screen.group;
-                        var access = Sao.common.MODELACCESS.get(
-                                this.tree.screen.model_name);
-                        var limit = ((this.tree.screen.size_limit !== null) &&
-                                (model.length >= this.tree.screen.size_limit));
-                        var prm;
-                        if (!access.create || limit) {
-                            prm = jQuery.when();
-                        } else {
-                            prm = this.tree.screen.new_();
-                        }
-                        prm.done(function() {
-                            var new_row;
-                            var rows = this.tree.tbody.children('tr');
-                            if (this.tree.attributes.editable == 'bottom') {
-                                new_row = rows.last();
-                            } else {
-                                new_row = rows.first();
-                            }
-                            focus_cell(new_row);
-                        }.bind(this));
-                    }
                 }
                 event_.preventDefault();
             } else {
@@ -1533,7 +1558,7 @@
             if (!cell) {
                 cell = this.get_cell();
             }
-            record.load(this.attributes.name).done(function() {
+            var render = function() {
                 var value;
                 var field = record.model.fields[this.attributes.name];
                 var invisible = field.get_state_attrs(record).invisible;
@@ -1584,7 +1609,12 @@
                     }
                     cell.text(value);
                 }
-            }.bind(this));
+            }.bind(this);
+            if (!record.is_loaded(this.attributes.name)) {
+                record.load(this.attributes.name).done(render);
+            } else {
+                render();
+            }
             return cell;
         },
         clicked: function(event) {
@@ -1620,7 +1650,7 @@
             if (!cell) {
                 cell = this.get_cell();
             }
-            record.load(this.attributes.name).done(function() {
+            var render = function() {
                 this.update_text(cell, record);
                 this.field.set_state(record);
                 var state_attrs = this.field.get_state_attrs(record);
@@ -1629,7 +1659,12 @@
                 } else {
                     cell.show();
                 }
-            }.bind(this));
+            }.bind(this);
+            if (!record.is_loaded(this.attributes.name)) {
+                record.load(this.attributes.name).done(render);
+            } else {
+                render();
+            }
             return cell;
         }
     });
@@ -1893,18 +1928,8 @@
             if (!cell) {
                 cell = this.get_cell();
             }
-            record.load(this.attributes.name).done(function() {
-                var value = this.field.get_client(record);
-                if (value) {
-                    if (value > Sao.common.BIG_IMAGE_SIZE) {
-                        value = jQuery.when(null);
-                    } else {
-                        value = this.field.get_data(record);
-                    }
-                } else {
-                    value = jQuery.when(null);
-                }
-                value.done(function(data) {
+            var render = function() {
+                var set_src = function(data) {
                     var img_url, blob;
                     if (!data) {
                         img_url = null;
@@ -1913,8 +1938,24 @@
                         img_url = window.URL.createObjectURL(blob);
                     }
                     cell.attr('src', img_url);
-                }.bind(this));
-            }.bind(this));
+                }.bind(this);
+
+                var value = this.field.get_client(record);
+                if (value) {
+                    if (value > Sao.common.BIG_IMAGE_SIZE) {
+                        set_src(null);
+                    } else {
+                        this.field.get_data(record).done(set_src);
+                    }
+                } else {
+                    set_src(null);
+                }
+            }.bind(this);
+            if (!record.is_loaded(this.attributes.name)) {
+                record.load(this.attributes.name).done(render);
+            } else {
+                render();
+            }
             return cell;
         }
     });
@@ -1985,10 +2026,7 @@
                         return undefined;
                     }
                 });
-            // Wait at least one eager field is loaded before evaluating states
-            record.load(fields[0]).done(function() {
-                button.set_state(record);
-            });
+            button.set_state(record);
             return button.el;
         },
         button_clicked: function(event) {
@@ -2128,14 +2166,6 @@
             Sao.View.EditableTree.Many2One._super.init.call(
                 this, view, attributes);
         },
-        key_press: function(event_) {
-            if (event_.which == Sao.common.TAB_KEYCODE) {
-                this.focus_out();
-            } else {
-                Sao.View.EditableTree.Many2One._super.key_press.call(this,
-                    event_);
-            }
-        }
     });
 
     Sao.View.EditableTree.Reference = Sao.class_(Sao.View.Form.Reference, {
@@ -2144,14 +2174,6 @@
             Sao.View.EditableTree.Reference._super.init.call(
                 this, view, attributes);
         },
-        key_press: function(event_) {
-            if (event_.which == Sao.common.TAB_KEYCODE) {
-                this.focus_out();
-            } else {
-                Sao.View.EditableTree.Reference._super.key_press.call(this,
-                    event_);
-            }
-        }
     });
 
     Sao.View.EditableTree.One2One = Sao.class_(Sao.View.Form.One2One, {
@@ -2160,14 +2182,6 @@
             Sao.View.EditableTree.One2One._super.init.call(
                 this, view, attributes);
         },
-        key_press: function(event_) {
-            if (event_.which == Sao.common.TAB_KEYCODE) {
-                this.focus_out();
-            } else {
-                Sao.View.EditableTree.One2One._super.key_press.call(this,
-                    event_);
-            }
-        }
     });
 
     Sao.View.EditableTree.One2Many = Sao.class_(Sao.View.EditableTree.Char, {
@@ -2184,6 +2198,7 @@
             }
         },
         key_press: function(event_) {
+            // TODO: remove when key_press is implemented
             if (event_.which == Sao.common.TAB_KEYCODE) {
                 this.focus_out();
             }

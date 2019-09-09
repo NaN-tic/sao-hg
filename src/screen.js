@@ -99,7 +99,7 @@
                 'aria-labelledby': 'bookmarks'
             });
             this.but_bookmark.click(function() {
-                dropdown_bookmark.children().remove();
+                dropdown_bookmark.empty();
                 var bookmarks = this.bookmarks();
                 for (var i=0; i < bookmarks.length; i++) {
                     var name = bookmarks[i][1];
@@ -226,7 +226,7 @@
         update: function() {
             var completions = this.screen.domain_parser.completion(
                     this.get_text());
-            this.search_list.children().remove();
+            this.search_list.empty();
             completions.forEach(function(e) {
                 jQuery('<option/>', {
                     'value': e.trim()
@@ -812,6 +812,7 @@
             this.tab = null;
             this.message_callback = null;
             this.switch_callback = null;
+            this.group_changed_callback = null;
             // count_tab_domain is called in Sao.Tab.Form.init after
             // switch_view to avoid unnecessary call to fields_view_get by
             // domain_parser.
@@ -1371,15 +1372,11 @@
                 return prm.then(function() {
                     group.add(record, this.new_model_position());
                     this.current_record = record;
-                    var prm = jQuery.when();
                     if (previous_view.view_type == 'calendar') {
-                        prm = previous_view.set_default_date(
-                            record, selected_date);
+                        previous_view.set_default_date(record, selected_date);
                     }
-                    prm.then(function() {
-                        this.display().done(function() {
-                            this.set_cursor(true, true);
-                        }.bind(this));
+                    this.display().done(function() {
+                        this.set_cursor(true, true);
                     }.bind(this));
                     return record;
                 }.bind(this));
@@ -1487,7 +1484,9 @@
                     return true;
                 }
             }
-            // TODO test view modified
+            if (this.current_view.modified) {
+                return true;
+            }
             return false;
         },
         unremove: function() {
