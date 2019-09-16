@@ -734,17 +734,14 @@
                 }.bind(this));
             };
             var set_preferences = function(preferences) {
-                var prm;
                 this.screen.current_record.cancel();
-                prm = this.screen.current_record.set(preferences);
+                this.screen.current_record.set(preferences);
                 this.screen.current_record.id =
                     this.screen.model.session.user_id;
-                prm.then(function() {
-                    this.screen.current_record.validate(null, true).then(
-                        function() {
-                            this.screen.display(true);
-                        }.bind(this));
-                }.bind(this));
+                this.screen.current_record.validate(null, true).then(
+                    function() {
+                        this.screen.display(true);
+                    }.bind(this));
                 dialog.body.append(this.screen.screen_container.el);
                 this.el.modal('show');
             };
@@ -1651,9 +1648,11 @@
                     node.click();
                 }
             }).click(function(event) {
-                node.addClass('bg-primary')
+                node.toggleClass('bg-primary')
                     .siblings().removeClass('bg-primary');
-                this.sel_predef(jQuery(event.target).attr('export_id'));
+                if (node.hasClass('bg-primary')) {
+                    this.sel_predef(node.attr('export_id'));
+                }
             }.bind(this));
             this.predef_exports_list.append(node);
         },
