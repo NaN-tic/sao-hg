@@ -2761,7 +2761,7 @@
         },
         get_icon_url: function(icon_name) {
             if (!icon_name) {
-                return;
+                return jQuery.when('');
             }
             return this.register_icon(icon_name).then(function() {
                 if (icon_name in this.loaded_icons) {
@@ -2915,7 +2915,7 @@
                 );
             dialog.body.append(jQuery('<p/>')
                     .text(Sao.i18n.gettext('Do you want to proceed?')));
-            dialog.footer.children().remove();
+            dialog.footer.empty();
             jQuery('<button/>', {
                 'class': 'btn btn-link',
                 'type': 'button'
@@ -3254,14 +3254,20 @@
             // (see http://www.w3.org/TR/css-overflow-3/#overflow-properties)
             this.dropdown.on('hide.bs.dropdown', function() {
                 this.input.focus();
-                this.input.closest('.treeview').css('overflow', '');
+                this.input.closest('.treeview')
+                    .css('overflow', '')
+                    .css('max-height', '');
                 this.input.closest('.modal-body').css('overflow', '');
                 this.input.closest('.navbar-collapse.in').css('overflow-y', '');
+                this.input[0].scrollIntoView();
             }.bind(this));
             this.dropdown.on('show.bs.dropdown', function() {
-                this.input.closest('.treeview').css('overflow', 'visible');
+                this.input.closest('.treeview')
+                    .css('overflow', 'visible')
+                    .css('max-height', 'none');
                 this.input.closest('.modal-body').css('overflow', 'visible');
                 this.input.closest('.navbar-collapse.in').css('overflow-y', 'visible');
+                this.input[0].scrollIntoView();
             }.bind(this));
         },
         set_actions: function(actions, action_activated) {

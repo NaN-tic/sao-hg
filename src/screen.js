@@ -99,7 +99,7 @@
                 'aria-labelledby': 'bookmarks'
             });
             this.but_bookmark.click(function() {
-                dropdown_bookmark.children().remove();
+                dropdown_bookmark.empty();
                 var bookmarks = this.bookmarks();
                 for (var i=0; i < bookmarks.length; i++) {
                     var name = bookmarks[i][1];
@@ -226,7 +226,7 @@
         update: function() {
             var completions = this.screen.domain_parser.completion(
                     this.get_text());
-            this.search_list.children().remove();
+            this.search_list.empty();
             completions.forEach(function(e) {
                 jQuery('<option/>', {
                     'value': e.trim()
@@ -812,6 +812,7 @@
             this.tab = null;
             this.message_callback = null;
             this.switch_callback = null;
+            this.group_changed_callback = null;
             // count_tab_domain is called in Sao.Tab.Form.init after
             // switch_view to avoid unnecessary call to fields_view_get by
             // domain_parser.
@@ -876,7 +877,8 @@
         get number_of_views() {
             return this.views.length + this.view_to_load.length;
         },
-        switch_view: function(view_type, view_id) {
+        switch_view: function(view_type, view_id, display) {
+            display = display === undefined ? true : display;
             if ((view_id !== undefined) && (view_id !== null)) {
                 view_id = Number(view_id);
             } else {
@@ -915,12 +917,19 @@
             var _switch = function() {
                 var set_container = function() {
                     this.screen_container.set(this.current_view.el);
-                    return this.display().done(function() {
-                        this.set_cursor();
-                        if (this.switch_callback) {
-                            this.switch_callback();
-                        }
-                    }.bind(this));
+                    var prm;
+                    if (display) {
+                        prm = this.display().done(function() {
+                            this.set_cursor();
+                        }.bind(this));
+                    } else {
+                        prm = jQuery.when();
+                    }
+                    return prm.done(function() {
+                            if (this.switch_callback) {
+                                this.switch_callback();
+                            }
+                        }.bind(this));
                 }.bind(this);
                 var continue_loop = function() {
                     if (!view_type && (view_id === null)) {
@@ -1346,13 +1355,13 @@
             var prm = jQuery.when();
             if (this.current_view.view_type == 'calendar') {
                 var selected_date = this.current_view.get_selected_date();
-                prm = this.switch_view('form');
+                prm = this.switch_view('form', undefined, false);
             }
             if (this.current_view &&
                     ((this.current_view.view_type == 'tree' &&
                       !this.current_view.editable) ||
                      this.current_view.view_type == 'graph')) {
-                prm = this.switch_view('form');
+                prm = this.switch_view('form', undefined, false);
             }
             return prm.then(function() {
                 var group;
@@ -1371,15 +1380,11 @@
                 return prm.then(function() {
                     group.add(record, this.new_model_position());
                     this.current_record = record;
-                    var prm = jQuery.when();
                     if (previous_view.view_type == 'calendar') {
-                        prm = previous_view.set_default_date(
-                            record, selected_date);
+                        previous_view.set_default_date(record, selected_date);
                     }
-                    prm.then(function() {
-                        this.display().done(function() {
-                            this.set_cursor(true, true);
-                        }.bind(this));
+                    this.display().done(function() {
+                        this.set_cursor(true, true);
                     }.bind(this));
                     return record;
                 }.bind(this));
@@ -1406,9 +1411,8 @@
                 this.current_record.cancel();
                 if (this.current_record.id < 0) {
                     if (initial_value) {
-                        prms.push(
-                            this.current_record.reset(initial_value).then(
-                                this.display.bind(this)));
+                        this.current_record.reset(initial_value);
+                        this.display();
                     } else {
                         prms.push(this.remove(
                             false, false, false, [this.current_record]));
@@ -1487,7 +1491,9 @@
                     return true;
                 }
             }
-            // TODO test view modified
+            if (this.current_view.modified) {
+                return true;
+            }
             return false;
         },
         unremove: function() {
