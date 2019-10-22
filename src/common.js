@@ -1362,7 +1362,13 @@
         },
         complete_value: function(field, value) {
             var complete_boolean = function() {
-                return value ? [true] : [false];
+                if ((value === null) || (value === undefined)) {
+                    return [true, false];
+                } else if (value) {
+                    return [false];
+                } else {
+                    return [true];
+                }
             };
 
             var complete_selection = function() {
@@ -1693,7 +1699,7 @@
                     }
                     if (~['integer', 'float', 'numeric', 'datetime', 'date',
                             'time'].indexOf(field.type)) {
-                        if (value && value.contains('..')) {
+                        if ((value instanceof String) && value.contains('..')) {
                             var values = value.split('..', 2);
                             var lvalue = this.convert_value(field, values[0]);
                             var rvalue = this.convert_value(field, values[1]);
@@ -1824,9 +1830,8 @@
                                     return test.toLowerCase().startsWith(
                                         value.toLowerCase());
                                 });
-                    } else {
-                        return Boolean(value);
                     }
+                    return null;
                 },
                 'float': function() {
                     var factor = Number(field.factor || 1);
@@ -1942,10 +1947,12 @@
 
             var converts = {
                 'boolean': function() {
-                    if (value) {
+                    if (value === false) {
+                        return Sao.i18n.gettext('False');
+                    } else if (value) {
                         return Sao.i18n.gettext('True');
                     } else {
-                        return Sao.i18n.gettext('False');
+                        return '';
                     }
                 },
                 'integer': function() {

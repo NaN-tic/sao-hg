@@ -1296,7 +1296,7 @@
         ['False', false],
         ['no', false],
         ['0', false],
-        [null, false]
+        [null, null],
         ].forEach(test_func, field);
 
         field = {
@@ -1527,7 +1527,7 @@
         [
         [true, 'True'],
         [false, 'False'],
-        [null, 'False']
+        [null, '']
         ].forEach(test_func, field);
 
         field = {
@@ -1771,6 +1771,15 @@
                     'complete_value(' + JSON.stringify(this) +
                         ', ' + JSON.stringify(value) + ')');
         };
+
+        field = {
+            'type': 'boolean',
+        };
+        [
+            [null, [true, false]],
+            [true, [false]],
+            [false, [true]],
+        ].forEach(test_func, field);
 
         field = {
             'type': 'selection',
