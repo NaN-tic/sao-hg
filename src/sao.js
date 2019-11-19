@@ -555,6 +555,7 @@ var Sao = {};
                 Sao.get_preferences().then(function(preferences) {
                     Sao.menu(preferences);
                     Sao.user_menu(preferences);
+		    window.location.reload(true);
                 });
             });
         });
