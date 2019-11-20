@@ -1603,11 +1603,7 @@ function eval_pyson(value){
             this.factor = Number(attributes.factor || 1);
         },
         get modified() {
-            if (this.record && this.field) {
-                var value = this.get_client_value();
-                return value != this.get_value();
-            }
-            return false;
+            return this.input.val();
         },
         set_value: function() {
             this.field.set_client(
