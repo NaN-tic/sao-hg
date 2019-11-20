@@ -1603,18 +1603,18 @@ function eval_pyson(value){
             this.factor = Number(attributes.factor || 1);
         },
         get modified() {
-            return this.input.val();
+            if (this.record && this.field) {
+                var value = this.get_client_value();
+                return value != this.get_value();
+            }
+            return false;
         },
         set_value: function() {
             this.field.set_client(
                 this.record, this.get_value(), undefined, this.factor);
         },
         get_value: function() {
-            if (this.input[0].checkValidity()) {
-                return this.input.val();
-            } else {
-                return NaN;
-            }
+            return this.input.val();
         },
         get_client_value: function() {
             var value = '';
